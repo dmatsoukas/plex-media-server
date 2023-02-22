@@ -1,0 +1,21 @@
+---
+version: "2.1"
+services:
+  plex:
+    image: dmatsoukas/plex-media-server:latest
+    container_name: plex
+    network_mode: host
+    environment:
+      - TZ=Europe/Athens
+      - PLEX_CLAIM=
+    volumes:
+      - /path/to/config:/config
+      - /path/to/movies:/movies
+    restart: unless-stopped
+    # Add your render and video ids
+    group_add:
+      - "107"
+      - "44"
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+      - /dev/dri/card0:/dev/dri/card0
