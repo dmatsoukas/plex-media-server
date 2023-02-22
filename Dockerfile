@@ -1,4 +1,5 @@
 ARG PLEX_VER=1.31.0.6654-02189b09f
+ARG PLEX_SHA=6b7f6f6a2f8f813ae9cf8d44fcceb72845b7d25c
 ARG BUSYBOX_VER=1.35.0
 ARG SU_EXEC_VER=0.4
 ARG TINI_VER=0.19.0
@@ -15,9 +16,11 @@ ARG DESTDIR=/prefix
 ARG CFLAGS="-O2 -pipe -fstack-protector-strong -D_FORTIFY_SOURCE=2 -flto"
 ARG LDFLAGS="$CFLAGS -Wl,-O1,--sort-common,--as-needed,-z,relro,-z,now"
 
+ARG LLVM_VERSION=10
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-FROM spritsail/alpine:3.17 AS builder
+FROM dmatsoukas/spritsail-alpine:latest AS builder
 
 RUN apk add --no-cache \
         autoconf \
@@ -42,6 +45,7 @@ RUN apk add --no-cache \
 FROM builder AS plex
 
 ARG PLEX_VER
+ARG PLEX_SHA
 ARG OUTPUT
 
 WORKDIR $OUTPUT
@@ -53,6 +57,7 @@ RUN if [ "$(uname -m)" = "aarch64" ]; then \
         ARCH=amd64; LIB_DIRS=lib/dri; \
     fi \
  && curl -fsSL -o plexmediaserver.deb https://downloads.plex.tv/plex-media-server-new/${PLEX_VER}/debian/plexmediaserver_${PLEX_VER}_${ARCH}.deb \
+ && echo "$PLEX_SHA  plexmediaserver.deb" | sha1sum -c - \
  && dpkg-deb -x plexmediaserver.deb . \
     \
  && rm -rfv \
@@ -287,6 +292,65 @@ RUN git clone https://github.com/curl/curl.git --branch $CURL_VER --depth 1 . \
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+FROM builder AS amd
+
+ARG CFLAGS
+ARG LDFLAGS
+ARG MAKEFLAGS
+ARG OUTPUT
+ARG DESTDIR
+
+WORKDIR /tmp/amd
+
+RUN apk add mesa-va-gallium --no-cache --update-cache \
+ && apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/testing libva-utils \
+ && mkdir -p "$OUTPUT/usr/bin" \
+ && cp -a /usr/bin/vainfo "$OUTPUT/usr/bin" \
+ && mkdir -p "$OUTPUT/usr/lib" \
+ && cd /lib \
+ && cp -a ld-musl-x86_64.so.1* "$OUTPUT/usr/lib" \
+ && cp -a libc.musl-x86_64.so.1* "$OUTPUT/usr/lib" \
+ && cp -a libz.so.1* "$OUTPUT/usr/lib" \
+ && cd /usr/lib \
+ && cp -a   libLLVM-15.0.7.so* "$OUTPUT/usr/lib" \
+ && cp -a   libLLVM-15.so* "$OUTPUT/usr/lib" \
+ && cp -a   libX11-xcb.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libXau.so.6* "$OUTPUT/usr/lib" \
+ && cp -a   libXdmcp.so.6* "$OUTPUT/usr/lib" \
+ && cp -a   libdrm.so.2* "$OUTPUT/usr/lib" \
+ && cp -a   libdrm_amdgpu.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libdrm_nouveau.so.2* "$OUTPUT/usr/lib" \
+ && cp -a   libdrm_radeon.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libelf-0.188.so* "$OUTPUT/usr/lib" \
+ && cp -a   libelf.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libexpat.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libgcc_s.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libstdc++.so.6* "$OUTPUT/usr/lib" \
+ && cp -a   libva-drm.so.2* "$OUTPUT/usr/lib" \
+ && cp -a   libva.so.2* "$OUTPUT/usr/lib" \
+ && cp -a   libxcb-dri2.so.0* "$OUTPUT/usr/lib" \
+ && cp -a   libxcb-dri3.so.0* "$OUTPUT/usr/lib" \
+ && cp -a   libxcb-present.so.0* "$OUTPUT/usr/lib" \
+ && cp -a   libxcb-sync.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libxcb-xfixes.so.0* "$OUTPUT/usr/lib" \
+ && cp -a   libxcb.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libxml2.so.2* "$OUTPUT/usr/lib" \
+ && cp -a   libxshmfence.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libbsd.so.0* "$OUTPUT/usr/lib" \
+ && cp -a   libmd.so.0* "$OUTPUT/usr/lib" \
+ && cp -a   libzstd.so.1* "$OUTPUT/usr/lib" \
+ && cp -a   libffi.so.8* "$OUTPUT/usr/lib" \
+ && cp -a   liblzma.so.5* "$OUTPUT/usr/lib" \
+
+ && mkdir -p "$OUTPUT/usr/lib/dri" \
+ && cp -a /usr/lib/dri/*.so "$OUTPUT/usr/lib/dri" \
+ && mkdir -p "$OUTPUT/usr/share/libdrm" \
+ && cp -a /usr/share/libdrm/amdgpu.ids "$OUTPUT/usr/share/libdrm"
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 FROM builder AS combine
 
 ARG OUTPUT
@@ -297,6 +361,7 @@ COPY --from=busybox "$OUTPUT" .
 COPY --from=zlib    "$OUTPUT" .
 COPY --from=xml     "$OUTPUT" .
 COPY --from=curl    "$OUTPUT" .
+COPY --from=amd     "$OUTPUT" .
 
 RUN install -m 1777 -o root -g root -d tmp \
  && ln -sv /usr/lib /usr/bin /usr/sbin . \
